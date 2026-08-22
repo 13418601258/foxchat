@@ -80,9 +80,10 @@ object UpdateManager {
             val target = File(dir, "foxchat-${info.versionName}.apk")
             if (target.exists()) target.delete()
 
-            val request = Request.Builder().url(resolveDownloadUrl(info.downloadUrl)).get().build()
+            val url = resolveDownloadUrl(info.downloadUrl)
+            val request = Request.Builder().url(url).get().build()
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) error("下载失败（HTTP ${response.code}）")
+                if (!response.isSuccessful) error("下载失败（HTTP ${response.code}）：$url")
                 val body = response.body ?: error("下载失败：空响应")
                 val total = body.contentLength()
                 var loaded = 0L

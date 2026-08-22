@@ -66,11 +66,31 @@ class DeviceIdentityStore(context: Context) {
 
     fun aiApiKey(): String = decrypt(KEY_AI_API_KEY).orEmpty()
 
+    fun saveAuthSession(
+        accessToken: String,
+        refreshToken: String,
+        savedAt: Long = System.currentTimeMillis()
+    ) {
+        encrypt(KEY_AUTH_TOKEN, accessToken)
+        encrypt(KEY_REFRESH_TOKEN, refreshToken)
+        preferences.edit().putLong(KEY_AUTH_SAVED_AT, savedAt).apply()
+    }
+
     fun saveAuthToken(token: String) {
         encrypt(KEY_AUTH_TOKEN, token)
+        preferences.edit().putLong(KEY_AUTH_SAVED_AT, System.currentTimeMillis()).apply()
     }
 
     fun authToken(): String? = decrypt(KEY_AUTH_TOKEN)
+
+    fun refreshToken(): String? = decrypt(KEY_REFRESH_TOKEN)
+
+    /** access_token 有效期约 1 小时，这里留 10 分钟余量，提前视为过期。 */
+    fun authTokenExpired(): Boolean {
+        val savedAt = preferences.getLong(KEY_AUTH_SAVED_AT, 0L)
+        if (savedAt == 0L) return true
+        return System.currentTimeMillis() - savedAt > AUTH_TOKEN_TTL_MS
+    }
 
     fun saveRemoteSyncTime(time: Long) {
         preferences.edit().putLong(KEY_REMOTE_SYNC_TIME, time).apply()
@@ -132,7 +152,10 @@ class DeviceIdentityStore(context: Context) {
         private const val KEY_AI_BASE_URL = "ai_base_url"
         private const val KEY_AI_API_KEY = "ai_api_key"
         private const val KEY_AUTH_TOKEN = "auth_token"
+        private const val KEY_REFRESH_TOKEN = "refresh_token"
+        private const val KEY_AUTH_SAVED_AT = "auth_token_saved_at"
         private const val KEY_REMOTE_SYNC_TIME = "remote_sync_time"
+        private const val AUTH_TOKEN_TTL_MS = 50L * 60L * 1000L
         private const val DEFAULT_AI_BASE_URL = "https://api.deepseek.com"
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
         private const val KEYSTORE_ALIAS = "foxchat_identity_key"

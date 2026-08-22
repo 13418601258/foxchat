@@ -8,7 +8,9 @@ import com.wjy.foxchat.data.local.FoxChatDatabase
 import com.wjy.foxchat.data.local.MessageEntity
 import com.wjy.foxchat.data.local.OutboxEntity
 import com.wjy.foxchat.data.local.ParticipantEntity
+import com.wjy.foxchat.analysis.StatisticsCalculator
 import com.wjy.foxchat.data.remote.SupabaseRemote
+import com.wjy.foxchat.model.ChatStats
 import com.wjy.foxchat.model.Message
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,10 +79,7 @@ class ChatRepository private constructor(context: Context) {
 
         val localRoomId = roomIdFromKey(pairingKey)
         val remoteRoomId = if (remote.isConfigured) {
-            identity.authToken()?.let(remote::setAccessToken)
-                ?: remote.signInAnonymously(identity.deviceId)
-                    .onSuccess(identity::saveAuthToken)
-                    .getOrThrow()
+            authenticate()
             remote.pairDevice(pairingKey.trim(), role, identity.deviceId).getOrThrow()
         } else {
             localRoomId
@@ -164,7 +163,8 @@ class ChatRepository private constructor(context: Context) {
                 senderRole = currentRole,
                 type = type,
                 text = text,
-                replyToMessageId = replyToMessageId
+                replyToMessageId = replyToMessageId,
+                createdAt = System.currentTimeMillis()
             )
         )
     }
@@ -178,7 +178,8 @@ class ChatRepository private constructor(context: Context) {
                 senderId = identity.deviceId,
                 senderRole = currentRole,
                 type = Message.TYPE_CHECKIN,
-                text = title
+                text = title,
+                createdAt = System.currentTimeMillis()
             )
         )
     }
@@ -200,7 +201,8 @@ class ChatRepository private constructor(context: Context) {
             mediaPath = localPath,
             mediaMimeType = mimeType,
             mediaDurationMs = durationMs,
-            replyToMessageId = replyToMessageId
+            replyToMessageId = replyToMessageId,
+            createdAt = System.currentTimeMillis()
         )
         insertOutgoing(message)
     }
@@ -347,10 +349,36 @@ class ChatRepository private constructor(context: Context) {
     fun observeReports() =
         database.weeklyReportDao().observeForConversation(currentConversationId)
 
+    /** 本地统计最近 N 天聊天数据（不依赖 AI）。 */
+    suspend fun computeStats(days: Int = 7): ChatStats {
+        ensureInitialized()
+        val since = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+        val messages = database.messageDao().since(currentConversationId, since)
+        return StatisticsCalculator.compute(messages, currentRole)
+    }
+
     data class SyncOutcome(
         val incomingMessages: List<MessageEntity>,
         val initialSync: Boolean
     )
+
+    private suspend fun authenticate() {
+        val token = identity.authToken()
+        if (token != null && !identity.authTokenExpired()) {
+            remote.setAccessToken(token)
+            return
+        }
+        val refresh = identity.refreshToken()
+        if (refresh != null) {
+            remote.refreshAccessToken(refresh)
+                .onSuccess { identity.saveAuthSession(it.accessToken, it.refreshToken) }
+                .getOrThrow()
+            return
+        }
+        remote.signInAnonymously(identity.deviceId)
+            .onSuccess { identity.saveAuthSession(it.accessToken, it.refreshToken) }
+            .getOrThrow()
+    }
 
     suspend fun syncNow(): Result<Unit> =
         syncNowWithOutcome().map { Unit }
@@ -363,33 +391,33 @@ class ChatRepository private constructor(context: Context) {
             }
             val previousSyncTime = identity.remoteSyncTime()
             val initialSync = previousSyncTime == 0L
-            identity.authToken()?.let(remote::setAccessToken)
-                ?: remote.signInAnonymously(identity.deviceId)
-                    .onSuccess(identity::saveAuthToken)
-                    .getOrThrow()
+            authenticate()
             val pending = database.messageDao().pendingForConversation(currentConversationId)
             pending.forEach { message ->
-                val outbound = if (
-                    message.type == Message.TYPE_IMAGE || message.type == Message.TYPE_AUDIO
-                ) {
-                    val localFile = message.mediaPath?.let(::File)
-                    if (localFile != null && localFile.exists()) {
-                        val remotePath = remote.uploadMedia(
-                            currentConversationId,
-                            message.id,
-                            localFile,
-                            message.mediaMimeType ?: "application/octet-stream"
-                        ).getOrThrow()
-                        message.copy(mediaPath = remotePath)
+                // 单条消息上传失败不阻塞整体同步（避免毒丸消息卡死全部消息）
+                runCatching {
+                    val outbound = if (
+                        message.type == Message.TYPE_IMAGE || message.type == Message.TYPE_AUDIO
+                    ) {
+                        val localFile = message.mediaPath?.let(::File)
+                        if (localFile != null && localFile.exists()) {
+                            val remotePath = remote.uploadMedia(
+                                currentConversationId,
+                                message.id,
+                                localFile,
+                                message.mediaMimeType ?: "application/octet-stream"
+                            ).getOrThrow()
+                            message.copy(mediaPath = remotePath)
+                        } else {
+                            message
+                        }
                     } else {
                         message
                     }
-                } else {
-                    message
+                    remote.upsertMessage(outbound).getOrThrow()
+                    database.messageDao().updateSyncState(message.id, "SYNCED", "DELIVERED")
+                    database.outboxDao().deleteForMessage(message.id)
                 }
-                remote.upsertMessage(outbound).getOrThrow()
-                database.messageDao().updateSyncState(message.id, "SYNCED", "DELIVERED")
-                database.outboxDao().deleteForMessage(message.id)
             }
 
             val remoteMessages = remote.fetchMessages(currentConversationId, previousSyncTime).getOrThrow()
@@ -419,7 +447,9 @@ class ChatRepository private constructor(context: Context) {
                     }
                 }
                 database.messageDao().upsertAll(localMessages)
-                identity.saveRemoteSyncTime(remoteMessages.maxOf { it.createdAt })
+                identity.saveRemoteSyncTime(
+                    remoteMessages.maxOf { maxOf(it.createdAt, it.recalledAt ?: 0L) }
+                )
             }
             remote.fetchParticipants(currentConversationId)
                 .getOrNull()

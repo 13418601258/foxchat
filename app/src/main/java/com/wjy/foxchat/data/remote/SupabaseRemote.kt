@@ -39,7 +39,7 @@ class SupabaseRemote {
         accessToken = token?.takeIf { it.isNotBlank() }
     }
 
-    suspend fun signInAnonymously(deviceId: String): Result<String> = runCatching {
+    suspend fun signInAnonymously(deviceId: String): Result<AuthSession> = runCatching {
         require(isConfigured) { "Supabase 未配置" }
         val payload = JSONObject().put("data", JSONObject().put("device_id", deviceId))
         val raw = execute(
@@ -49,10 +49,30 @@ class SupabaseRemote {
                 .post(payload.toString().toRequestBody(jsonType))
                 .build()
         )
-        JSONObject(raw).optString("access_token").also {
-            require(it.isNotBlank()) { "匿名会话创建失败" }
-            accessToken = it
-        }
+        val json = JSONObject(raw)
+        val access = json.optString("access_token")
+        val refresh = json.optString("refresh_token")
+        require(access.isNotBlank()) { "匿名会话创建失败" }
+        accessToken = access
+        AuthSession(access, refresh)
+    }
+
+    suspend fun refreshAccessToken(refreshToken: String): Result<AuthSession> = runCatching {
+        require(isConfigured) { "Supabase 未配置" }
+        val payload = JSONObject().apply { put("refresh_token", refreshToken) }
+        val raw = execute(
+            Request.Builder()
+                .url("${baseUrl()}/auth/v1/token?grant_type=refresh_token")
+                .headers(defaultHeaders())
+                .post(payload.toString().toRequestBody(jsonType))
+                .build()
+        )
+        val json = JSONObject(raw)
+        val access = json.optString("access_token")
+        val refresh = json.optString("refresh_token").ifBlank { refreshToken }
+        require(access.isNotBlank()) { "刷新会话失败" }
+        accessToken = access
+        AuthSession(access, refresh)
     }
 
     suspend fun pairDevice(roomKey: String, role: String, deviceId: String): Result<String> = runCatching {
@@ -268,7 +288,7 @@ class SupabaseRemote {
     suspend fun fetchMessages(conversationId: String, after: Long): Result<List<MessageEntity>> = runCatching {
         require(isConfigured) { "Supabase 未配置" }
         val url = "${baseUrl()}/rest/v1/messages?conversation_id=eq.$conversationId" +
-            "&created_at_ms=gt.$after&order=created_at_ms.asc"
+            "&or=(created_at_ms.gt.$after,recalled_at_ms.gt.$after)&order=created_at_ms.asc"
         val raw = execute(
             Request.Builder()
                 .url(url)
@@ -414,3 +434,9 @@ class SupabaseRemote {
         }
     }
 }
+
+/** 匿名登录会话：access_token（短效）+ refresh_token（长效）。 */
+data class AuthSession(
+    val accessToken: String,
+    val refreshToken: String
+)
