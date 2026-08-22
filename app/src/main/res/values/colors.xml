@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fox_orange">#FF6B3D</color>
+    <color name="fox_orange_deep">#DF5129</color>
+    <color name="fox_orange_light">#FF8C66</color>
+    <color name="fox_warm">#FFB347</color>
+    <color name="background">#F7F8F6</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#253033</color>
+    <color name="text_secondary">#738083</color>
+    <color name="bubble_ai">#FFFFFF</color>
+    <color name="bubble_user">#FF6B3D</color>
+    <color name="chat_line">#E2E8E5</color>
+    <color name="bubble_ai_line">#E4EAE7</color>
+    <color name="quoted_ai">#F1F4F2</color>
+    <color name="quoted_user">#E85D35</color>
+    <color name="quoted_user_text">#FFF4EF</color>
+    <color name="input_surface">#F8FAF9</color>
+    <color name="sync_green">#4D9A75</color>
+    <color name="sync_surface">#EFF8F3</color>
+</resources>

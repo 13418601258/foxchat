@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+
+# 本地配置（含密钥，禁止提交）
+local.properties
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 构建产物
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 备份文件
+*.bak
+
+# 日志
+*.log

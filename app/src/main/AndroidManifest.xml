@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:name=".FoxChatApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.FoxChat"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".ui.ApiKeyActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.ChatActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ui.ChatSettingsActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity android:name=".ui.ChatToolsActivity" />
+        <activity android:name=".ui.ChatSearchActivity" />
+        <activity android:name=".ui.WeeklyReportsActivity" />
+        <activity android:name=".ui.AnalysisConsentActivity" />
+        <activity android:name=".ui.ChatClearActivity" />
+        <activity android:name=".ui.ChatExportActivity" />
+        <activity android:name=".ui.MessageActionsActivity" />
+        <activity android:name=".ui.ImagePreviewActivity" />
+        <activity
+            android:name=".ui.ScheduledNotificationActivity"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ui.CheckinCreateActivity"
+            android:windowSoftInputMode="adjustResize" />
+
+        <receiver
+            android:name=".notification.ScheduledNotificationReceiver"
+            android:exported="false" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FoxChat</string>
+    <string name="media_image">图片消息</string>
+    <string name="chat_actions">聊天操作</string>
+    <string name="chat_tools">更多聊天工具</string>
+    <string name="record_voice">按住录音</string>
+    <string name="send_message">发送消息</string>
+    <string name="assistant_online">可进行ai分析</string>
+    <string name="message_hint">输入消息</string>
+    <string name="chat_settings">聊天设置</string>
+    <string name="current_conversation">当前对话</string>
+    <string name="one_to_one_chat">FoxChat</string>
+    <string name="chat_functions">聊天功能</string>
+    <string name="search_history">搜索聊天记录</string>
+    <string name="set_background">设置聊天背景</string>
+    <string name="reset_background">恢复默认背景</string>
+    <string name="weekly_reports">查看每周分析</string>
+    <string name="analysis_consent">每周分析同意</string>
+    <string name="chat_data">聊天数据</string>
+    <string name="export_chat">导出聊天记录</string>
+    <string name="sync_now">立即同步</string>
+    <string name="clear_chat">清空当前聊天</string>
+    <string name="check_update">检查更新</string>
+    <string name="enabled">已开启</string>
+    <string name="disabled">未开启</string>
+</resources>
