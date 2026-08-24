@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.DrawerValue
@@ -546,6 +547,7 @@ private fun SidebarContent(onSidebarAction: (String) -> Unit) {
             )
         }
         HorizontalDivider(color = ChatColors.ChatLine)
+        SidebarItem("宠物", Icons.Filled.Pets, "pet", onSidebarAction)
         SidebarItem("打卡", Icons.Filled.CheckCircle, "checkin", onSidebarAction)
         SidebarItem("定时通知", Icons.Filled.Alarm, "scheduled_notification", onSidebarAction)
     }

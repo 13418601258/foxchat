@@ -14,8 +14,8 @@ android {
         applicationId = "com.wjy.foxchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
 
         val localProperties = Properties().apply {
             val file = rootProject.file("local.properties")
@@ -92,6 +92,8 @@ dependencies {
     // Network - OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-gif:2.5.0")
 
     // JSON
     implementation("org.json:json:20231013")

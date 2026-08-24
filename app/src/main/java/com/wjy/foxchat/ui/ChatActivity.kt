@@ -238,6 +238,8 @@ class ChatActivity : ComponentActivity() {
 
     private fun handleSidebarAction(action: String) {
         when (action) {
+            "pet" ->
+                startActivity(PetActivity.newIntent(this))
             "checkin" ->
                 startActivity(CheckinCreateActivity.newIntent(this))
             "scheduled_notification" ->
@@ -313,7 +315,13 @@ class ChatActivity : ComponentActivity() {
         }
         if (recorder != null) return
         val file = File(createMediaDirectory("audio"), "AUD_${System.currentTimeMillis()}.m4a")
-        val newRecorder = MediaRecorder()
+        // Android 12+ 用带 Context 的构造器，避免录音在部分设备上启动失败
+        val newRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(this)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
         try {
             newRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
             newRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -373,20 +381,31 @@ class ChatActivity : ComponentActivity() {
     }
 
     private fun playAudio(message: Message) {
-        val path = message.mediaPath ?: return
+        val raw = message.mediaPath ?: return
+        val file = File(raw)
+        if (!file.exists()) {
+            // 语音文件尚未下载到本地（远程路径未同步完）
+            showInlineStatus("语音文件未就绪，请稍后重试")
+            return
+        }
         mediaPlayer?.release()
-        mediaPlayer = MediaPlayer().apply {
-            setDataSource(path)
-            setOnPreparedListener { it.start() }
-            setOnCompletionListener { player ->
-                player.release()
-                if (mediaPlayer === player) mediaPlayer = null
+        mediaPlayer = try {
+            MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener { player ->
+                    player.release()
+                    if (mediaPlayer === player) mediaPlayer = null
+                }
+                setOnErrorListener { _, _, _ ->
+                    showInlineStatus("语音播放失败")
+                    true
+                }
+                prepareAsync()
             }
-            setOnErrorListener { _, _, _ ->
-                showInlineStatus("语音播放失败")
-                true
-            }
-            prepareAsync()
+        } catch (_: Exception) {
+            showInlineStatus("语音播放失败")
+            null
         }
     }
 

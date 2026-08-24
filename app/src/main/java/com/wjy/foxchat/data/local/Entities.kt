@@ -86,3 +86,15 @@ data class OutboxEntity(
     val lastError: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "pet")
+data class PetEntity(
+    @PrimaryKey val id: Int = 1,
+    val food: Int = 10,
+    val drink: Int = 10,
+    val condition: Double = 10.0,
+    val love: Int = 0,
+    val days: Int = 0,
+    val lastUpdatedAt: Long = System.currentTimeMillis(),
+    val startedAt: Long = System.currentTimeMillis()
+)

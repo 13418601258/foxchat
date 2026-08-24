@@ -14,9 +14,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MediaAttachmentEntity::class,
         WeeklyReportEntity::class,
         ParticipantEntity::class,
-        OutboxEntity::class
+        OutboxEntity::class,
+        PetEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FoxChatDatabase : RoomDatabase() {
@@ -26,6 +27,7 @@ abstract class FoxChatDatabase : RoomDatabase() {
     abstract fun weeklyReportDao(): WeeklyReportDao
     abstract fun participantDao(): ParticipantDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun petDao(): PetDao
 
     companion object {
         @Volatile private var instance: FoxChatDatabase? = null
@@ -36,7 +38,7 @@ abstract class FoxChatDatabase : RoomDatabase() {
                     context.applicationContext,
                     FoxChatDatabase::class.java,
                     "foxchat.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { instance = it }
             }
 
@@ -49,6 +51,14 @@ abstract class FoxChatDatabase : RoomDatabase() {
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE participants ADD COLUMN avatar TEXT")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pet` (`id` INTEGER NOT NULL, `food` INTEGER NOT NULL, `drink` INTEGER NOT NULL, `condition` REAL NOT NULL, `love` INTEGER NOT NULL, `days` INTEGER NOT NULL, `lastUpdatedAt` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
             }
         }
     }

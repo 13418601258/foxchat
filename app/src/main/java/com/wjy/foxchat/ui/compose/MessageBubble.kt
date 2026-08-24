@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -199,12 +200,17 @@ private fun BubbleContent(
                     runCatching { BitmapFactory.decodeFile(pathToFile(path).absolutePath) }.getOrNull()
                 }
                 if (bitmap != null) {
+                    // 缩小到原图 1/3 显示，宽度上限 260dp，保持宽高比
+                    val widthDp = with(LocalDensity.current) {
+                        (bitmap.width / 3f).toDp()
+                    }.coerceAtMost(260.dp)
+                    val heightDp = widthDp * (bitmap.height.toFloat() / bitmap.width.toFloat())
                     Image(
                         painter = BitmapPainter(bitmap.asImageBitmap()),
                         contentDescription = null,
                         modifier = Modifier
-                            .width(220.dp)
-                            .height(180.dp)
+                            .width(widthDp)
+                            .height(heightDp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(bubbleColor)
                             .clickable { onImageClick(message) }

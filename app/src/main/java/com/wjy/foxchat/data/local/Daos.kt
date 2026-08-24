@@ -113,3 +113,15 @@ interface WeeklyReportDao {
     @Query("SELECT * FROM weekly_reports WHERE conversationId = :conversationId ORDER BY createdAt DESC LIMIT 1")
     suspend fun latest(conversationId: String): WeeklyReportEntity?
 }
+
+@Dao
+interface PetDao {
+    @Query("SELECT * FROM pet WHERE id = 1")
+    fun observe(): Flow<PetEntity?>
+
+    @Query("SELECT * FROM pet WHERE id = 1")
+    suspend fun get(): PetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(pet: PetEntity)
+}
