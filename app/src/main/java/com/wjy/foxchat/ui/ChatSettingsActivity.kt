@@ -2,11 +2,18 @@ package com.wjy.foxchat.ui
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.wjy.foxchat.BuildConfig
 import com.wjy.foxchat.data.repository.ChatRepository
 import com.wjy.foxchat.databinding.ActivityChatSettingsBinding
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 class ChatSettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityChatSettingsBinding
@@ -20,6 +27,7 @@ class ChatSettingsActivity : AppCompatActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
         binding.rowSearch.setOnClickListener { startActivity(ChatSearchActivity.newIntent(this)) }
+        binding.rowChangeAvatar.setOnClickListener { chooseAvatar.launch("image/*") }
         binding.rowSetBackground.setOnClickListener { select(ACTION_SET_BACKGROUND) }
         binding.rowResetBackground.setOnClickListener { select(ACTION_RESET_BACKGROUND) }
         binding.rowReports.setOnClickListener { startActivity(WeeklyReportsActivity.newIntent(this)) }
@@ -48,6 +56,32 @@ class ChatSettingsActivity : AppCompatActivity() {
             getString(com.wjy.foxchat.R.string.enabled)
         } else {
             getString(com.wjy.foxchat.R.string.disabled)
+        }
+    }
+
+    private val chooseAvatar = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) changeAvatar(uri)
+    }
+
+    private fun changeAvatar(uri: Uri) {
+        val file = runCatching {
+            val dir = File(filesDir, "avatars").apply { mkdirs() }
+            val target = File(dir, "avatar_${System.currentTimeMillis()}.jpg")
+            contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "无法读取图片" }
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
+            target
+        }.getOrElse {
+            Toast.makeText(this, "头像读取失败", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            repository.changeAvatar(file.absolutePath).onSuccess {
+                Toast.makeText(this@ChatSettingsActivity, "头像已更新", Toast.LENGTH_SHORT).show()
+            }.onFailure { e ->
+                Toast.makeText(this@ChatSettingsActivity, "头像更新失败：${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

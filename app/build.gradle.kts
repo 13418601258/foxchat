@@ -14,8 +14,8 @@ android {
         applicationId = "com.wjy.foxchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 7
+        versionName = "1.6"
 
         val localProperties = Properties().apply {
             val file = rootProject.file("local.properties")

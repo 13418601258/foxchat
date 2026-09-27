@@ -119,6 +119,29 @@ class ChatRepository private constructor(context: Context) {
         return remote.downloadMedia(remotePath, target).getOrNull()?.absolutePath
     }
 
+    /** 更换头像：保存本地、更新本地参与者并上传云端（对方可同步看到）。 */
+    suspend fun changeAvatar(avatar: String?): Result<Unit> = runCatching {
+        ensureInitialized()
+        if (avatar != null) identity.saveAvatarPath(avatar)
+        val existing = database.participantDao()
+            .findForConversation(currentConversationId)
+            .firstOrNull { it.role == currentRole }
+        database.participantDao().upsert(
+            ParticipantEntity(
+                id = "$currentConversationId:$currentRole",
+                conversationId = currentConversationId,
+                role = currentRole,
+                deviceId = identity.deviceId,
+                analysisConsent = existing?.analysisConsent ?: false,
+                avatar = avatar
+            )
+        )
+        if (remote.isConfigured && avatar != null) {
+            authenticate()
+            remote.uploadAndSetAvatar(currentConversationId, currentRole, avatar)
+        }
+    }
+
     fun observeMessages(): Flow<List<Message>> {
         val since = System.currentTimeMillis() - RECENT_WINDOW_MS
         return database.messageDao().observeRecent(currentConversationId, since).map { items ->
@@ -251,11 +274,17 @@ class ChatRepository private constructor(context: Context) {
         ensureInitialized()
         if (uri == null) {
             database.conversationDao().updateBackground(currentConversationId, null)
+            File(appContext.filesDir, "backgrounds/cache/current.jpg").delete()
             if (remote.isConfigured) {
                 remote.setRoomBackground(currentConversationId, null)
             }
             return
         }
+        // 先把本地原图复制到缓存，保证背景立即显示、不因远程下载失败而消失
+        val cached = File(appContext.filesDir, "backgrounds/cache/current.jpg").apply {
+            parentFile?.mkdirs()
+        }
+        runCatching { File(uri).copyTo(cached, overwrite = true) }
         if (remote.isConfigured) {
             val remotePath = remote.uploadBackground(currentConversationId, uri).getOrNull()
             if (remotePath != null) {
@@ -281,6 +310,9 @@ class ChatRepository private constructor(context: Context) {
     suspend fun resolveBackgroundLocalPath(remotePath: String?): String? {
         if (remotePath.isNullOrBlank()) return null
         if (File(remotePath).exists()) return remotePath
+        // 优先使用本地缓存（刚设置的背景，避免远程下载失败导致消失）
+        val cached = File(appContext.filesDir, "backgrounds/cache/current.jpg")
+        if (cached.exists()) return cached.absolutePath
         val target = File(appContext.filesDir, "backgrounds/cache/${remotePath.hashCode()}.jpg")
         if (target.exists()) return target.absolutePath
         return remote.downloadMedia(remotePath, target).getOrNull()?.absolutePath
@@ -335,6 +367,10 @@ class ChatRepository private constructor(context: Context) {
 
     suspend fun messagesForAnalysis(since: Long): List<MessageEntity> =
         database.messageDao().since(currentConversationId, since)
+
+    /** 取最近 N 条消息用于周报分析（默认近 200 条）。 */
+    suspend fun messagesForAnalysisRecent(limit: Int = 200): List<MessageEntity> =
+        database.messageDao().allForConversation(currentConversationId).takeLast(limit)
 
     suspend fun latestReport() =
         database.weeklyReportDao().latest(currentConversationId)
@@ -427,26 +463,8 @@ class ChatRepository private constructor(context: Context) {
                 remoteMessages.filter { it.senderId != identity.deviceId }
             }
             if (remoteMessages.isNotEmpty()) {
-                val localMessages = remoteMessages.map { message ->
-                    if (
-                        (message.type == Message.TYPE_IMAGE || message.type == Message.TYPE_AUDIO) &&
-                        !message.mediaPath.isNullOrBlank() &&
-                        !File(message.mediaPath).exists()
-                    ) {
-                        val extension = message.mediaMimeType
-                            ?.substringAfter('/', "bin")
-                            ?.substringBefore(';')
-                            ?: "bin"
-                        val target = File(appContext.filesDir, "media/synced/${message.id}.$extension")
-                        remote.downloadMedia(message.mediaPath, target)
-                            .getOrNull()
-                            ?.let { message.copy(mediaPath = it.absolutePath) }
-                            ?: message
-                    } else {
-                        message
-                    }
-                }
-                database.messageDao().upsertAll(localMessages)
+                // 只同步元数据，媒体文件交由 prefetchRecentMedia 后台按需下载
+                database.messageDao().upsertAll(remoteMessages)
                 identity.saveRemoteSyncTime(
                     remoteMessages.maxOf { maxOf(it.createdAt, it.recalledAt ?: 0L) }
                 )
@@ -462,10 +480,41 @@ class ChatRepository private constructor(context: Context) {
                 ?.let { remoteUri ->
                     val current = database.conversationDao().find(currentConversationId)?.backgroundUri
                     if (remoteUri != current) {
+                        // 背景有变化：清掉本地缓存，重新下载
+                        File(appContext.filesDir, "backgrounds/cache/current.jpg").delete()
                         database.conversationDao().updateBackground(currentConversationId, remoteUri)
                     }
                 }
             SyncOutcome(incomingMessages, initialSync)
+        }
+    }
+
+    /** 下载单条媒体消息到本地缓存，返回本地绝对路径；失败返回 null。 */
+    private suspend fun downloadMediaToCache(message: MessageEntity): String? {
+        val remotePath = message.mediaPath ?: return null
+        val extension = message.mediaMimeType
+            ?.substringAfter('/', "bin")
+            ?.substringBefore(';')
+            ?: "bin"
+        val target = File(appContext.filesDir, "media/synced/${message.id}.$extension")
+        if (target.exists()) return target.absolutePath
+        return remote.downloadMedia(remotePath, target).getOrNull()?.absolutePath
+    }
+
+    /** 后台预取最近窗口内缺失的媒体文件（图片/语音），下载后更新本地路径触发 UI 刷新。 */
+    suspend fun prefetchRecentMedia() {
+        ensureInitialized()
+        if (!remote.isConfigured || !identity.isPaired) return
+        val since = System.currentTimeMillis() - RECENT_WINDOW_MS
+        val candidates = database.messageDao().since(currentConversationId, since)
+            .filter { message ->
+                (message.type == Message.TYPE_IMAGE || message.type == Message.TYPE_AUDIO) &&
+                    !message.mediaPath.isNullOrBlank() &&
+                    !File(message.mediaPath).exists()
+            }
+        for (message in candidates) {
+            val local = downloadMediaToCache(message) ?: continue
+            database.messageDao().updateMediaPath(message.id, local)
         }
     }
 

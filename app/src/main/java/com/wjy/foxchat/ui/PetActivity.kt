@@ -100,7 +100,14 @@ private fun PetScreen(
     val scope = rememberCoroutineScope()
     var pet by remember { mutableStateOf<PetEntity?>(null) }
     var isFeeding by remember { mutableStateOf(false) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isSitting by remember { mutableStateOf(true) }
     var bubble by remember { mutableStateOf("") }
+    // 待机：坐 1 分钟，睡 2 分钟，轮流切换
+    LaunchedEffect(isSitting) {
+        delay(if (isSitting) 60_000L else 120_000L)
+        isSitting = !isSitting
+    }
     // 显式启用 GIF 解码器，确保动图播放
     val imageLoader = remember(context) {
         ImageLoader.Builder(context)
@@ -123,11 +130,12 @@ private fun PetScreen(
         bubble = statusBubble(settled)
     }
 
-    // 喂食动画 3 秒后恢复待机
-    LaunchedEffect(isFeeding) {
-        if (isFeeding) {
+    // 喂食/陪伴动画 3 秒后恢复待机
+    LaunchedEffect(isFeeding, isPlaying) {
+        if (isFeeding || isPlaying) {
             delay(3000)
             isFeeding = false
+            isPlaying = false
         }
     }
 
@@ -181,7 +189,12 @@ private fun PetScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
-                        model = if (isFeeding) R.drawable.pet_feed else R.drawable.pet_sleep,
+                        model = when {
+                            current.food <= 0 -> R.drawable.pet_ghost
+                            isFeeding -> R.drawable.pet_feed
+                            isPlaying -> R.drawable.pet_play
+                            else -> if (isSitting) R.drawable.pet_sit else R.drawable.pet_sleep
+                        },
                         contentDescription = "宠物",
                         imageLoader = imageLoader,
                         modifier = Modifier.size(210.dp)
@@ -230,6 +243,7 @@ private fun PetScreen(
                     }
                     Button(
                         onClick = {
+                            isPlaying = true
                             bubble = "嘻嘻，和你玩最开心！"
                             scope.launch {
                                 val next = current.let { PetManager.play(it) }
@@ -302,6 +316,7 @@ private fun StatBar(label: String, value: Double, max: Double, color: Color) {
 }
 
 private fun statusBubble(pet: PetEntity): String = when {
+    pet.food <= 0 -> "变成幽灵了…快喂我！"
     pet.love >= PetManager.MAX_LOVE -> "我最喜欢你了！"
     pet.food < 4 || pet.drink < 4 -> "我饿了…"
     pet.food < 6 || pet.drink < 6 -> "有点饿，陪我玩会吧"

@@ -17,4 +17,13 @@
             android:layout_margin="16dp"
             android:orientation="vertical" />
     </ScrollView>
+    <Button
+        android:id="@+id/btnAnalyze"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_margin="16dp"
+        android:backgroundTint="@color/fox_orange"
+        android:text="生成趣味周报"
+        android:textColor="@android:color/white"
+        android:textSize="15sp" />
 </LinearLayout>

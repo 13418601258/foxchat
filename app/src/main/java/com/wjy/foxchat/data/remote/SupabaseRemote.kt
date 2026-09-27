@@ -120,7 +120,8 @@ class SupabaseRemote {
             "webp" -> "image/webp"
             else -> "image/jpeg"
         }
-        val remotePath = "avatars/$conversationId/$role.jpg"
+        // 路径以房间 id 开头，才能匹配 chat-media 桶的 RLS 下载权限
+        val remotePath = "$conversationId/avatars/$role.jpg"
         execute(
             Request.Builder()
                 .url("${baseUrl()}/storage/v1/object/chat-media/$remotePath")
@@ -150,7 +151,8 @@ class SupabaseRemote {
             "webp" -> "image/webp"
             else -> "image/jpeg"
         }
-        val remotePath = "backgrounds/$conversationId.jpg"
+        // 路径以房间 id 开头，才能匹配 chat-media 桶的 RLS 下载权限
+        val remotePath = "$conversationId/backgrounds/background.jpg"
         execute(
             Request.Builder()
                 .url("${baseUrl()}/storage/v1/object/chat-media/$remotePath")

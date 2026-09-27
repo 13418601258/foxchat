@@ -124,7 +124,12 @@ class DeviceIdentityStore(context: Context) {
         }.getOrNull()
     }
 
-    private fun getOrCreateKey(): SecretKey {
+    private fun getOrCreateKey(): SecretKey =
+        cachedKey ?: synchronized(KEY_LOCK) {
+            cachedKey ?: createKey().also { cachedKey = it }
+        }
+
+    private fun createKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         val existing = keyStore.getKey(KEYSTORE_ALIAS, null) as? SecretKey
         if (existing != null) return existing
@@ -143,6 +148,9 @@ class DeviceIdentityStore(context: Context) {
     }
 
     companion object {
+        @Volatile private var cachedKey: SecretKey? = null
+        private val KEY_LOCK = Any()
+
         private const val PREFERENCES_NAME = "foxchat_identity"
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_PARTICIPANT_ROLE = "participant_role"

@@ -8,7 +8,6 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.wjy.foxchat.analysis.SyncWorker
-import com.wjy.foxchat.analysis.WeeklyAnalysisWorker
 import coil.Coil
 import coil.ImageLoader
 import coil.decode.GifDecoder
@@ -43,12 +42,6 @@ class FoxChatApplication : Application() {
                 .setConstraints(constraints)
                 .build()
         )
-        workManager.enqueueUniquePeriodicWork(
-            "foxchat-weekly-analysis",
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<WeeklyAnalysisWorker>(7, TimeUnit.DAYS)
-                .setConstraints(constraints)
-                .build()
-        )
+        // 周报改为在「每周分析」页面手动点击生成，不再定时
     }
 }

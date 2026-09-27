@@ -1,8 +1,6 @@
 package com.wjy.foxchat.ui.compose
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,8 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
@@ -47,6 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import com.wjy.foxchat.model.Message
 import java.io.File
 import java.text.SimpleDateFormat
@@ -192,29 +191,56 @@ private fun BubbleContent(
             )
         }
 
-        // 图片
+        // 图片：用 Coil 异步加载并自动下采样，避免直接解码大图导致主线程卡顿/OOM
         if (message.isImage) {
             val path = message.mediaPath
             if (!path.isNullOrBlank()) {
-                val bitmap = remember(path) {
-                    runCatching { BitmapFactory.decodeFile(pathToFile(path).absolutePath) }.getOrNull()
-                }
-                if (bitmap != null) {
-                    // 缩小到原图 1/3 显示，宽度上限 260dp，保持宽高比
-                    val widthDp = with(LocalDensity.current) {
-                        (bitmap.width / 3f).toDp()
-                    }.coerceAtMost(260.dp)
-                    val heightDp = widthDp * (bitmap.height.toFloat() / bitmap.width.toFloat())
-                    Image(
-                        painter = BitmapPainter(bitmap.asImageBitmap()),
+                val file = pathToFile(path)
+                if (file.exists()) {
+                    SubcomposeAsyncImage(
+                        model = file,
                         contentDescription = null,
                         modifier = Modifier
-                            .width(widthDp)
-                            .height(heightDp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(bubbleColor)
                             .clickable { onImageClick(message) }
-                    )
+                    ) {
+                        when (val state = painter.state) {
+                            is AsyncImagePainter.State.Loading -> {
+                                Box(
+                                    modifier = Modifier
+                                        .width(220.dp)
+                                        .height(160.dp)
+                                        .background(bubbleColor)
+                                )
+                            }
+                            is AsyncImagePainter.State.Success -> {
+                                val density = LocalDensity.current.density
+                                val drawable = state.result.drawable
+                                val iw = drawable.intrinsicWidth.takeIf { it > 0 }
+                                val ih = drawable.intrinsicHeight.takeIf { it > 0 }
+                                if (iw != null && ih != null) {
+                                    // 保持原图宽高比，宽度上限 260dp
+                                    val widthDp = (iw / density).dp.coerceAtMost(260.dp)
+                                    val heightDp = widthDp * (ih.toFloat() / iw.toFloat())
+                                    SubcomposeAsyncImageContent(
+                                        modifier = Modifier
+                                            .width(widthDp)
+                                            .height(heightDp)
+                                    )
+                                }
+                            }
+                            is AsyncImagePainter.State.Error -> {
+                                Box(
+                                    modifier = Modifier
+                                        .width(160.dp)
+                                        .height(120.dp)
+                                        .background(bubbleColor)
+                                )
+                            }
+                            else -> Unit
+                        }
+                    }
                 }
             }
         }

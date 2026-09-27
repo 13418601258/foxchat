@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -52,6 +53,11 @@ class PetFloatService : Service() {
     private var startTouchX = 0f
     private var startTouchY = 0f
     private var isDragging = false
+    // 待机 gif：先坐 5 秒、再睡 5 秒轮流
+    private var idleGif = R.drawable.pet_sit
+    private var isSitting = true
+    private var animating = false
+    private var isGhost = false
 
     override fun onCreate() {
         super.onCreate()
@@ -60,7 +66,24 @@ class PetFloatService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         showFloatView()
+        startIdleRotation()
+        refreshPetState()
         return START_STICKY
+    }
+
+    /** 读取宠物饥饿值：饥饿为 0 时只显示幽灵 gif */
+    private fun refreshPetState() {
+        scope.launch {
+            val db = FoxChatDatabase.get(this@PetFloatService)
+            val food = db.petDao().get()?.food ?: PetManager.MAX_STAT
+            if (food <= 0) {
+                isGhost = true
+                switchGif(R.drawable.pet_ghost)
+            } else {
+                isGhost = false
+                switchGif(idleGif)
+            }
+        }
     }
 
     private fun showFloatView() {
@@ -70,7 +93,7 @@ class PetFloatService : Service() {
         }
 
         val imageView = ImageView(this)
-        imageView.load(R.drawable.pet_sleep)
+        imageView.load(idleGif)
         imageView.contentDescription = "悬浮宠物"
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
 
@@ -169,10 +192,26 @@ class PetFloatService : Service() {
             val updated = pet?.let { PetManager.feed(it) } ?: PetEntity()
             db.petDao().upsert(updated)
             // 悬浮窗切换到喂食动画，3 秒后恢复待机
+            animating = true
             switchGif(R.drawable.pet_feed)
             delay(3000)
-            switchGif(R.drawable.pet_sleep)
+            animating = false
+            isGhost = false
+            switchGif(idleGif)
             showToast("已投喂，小狐狸很开心！")
+        }
+    }
+
+    /** 待机轮流：坐 1 分钟、睡 2 分钟切换（互动动画播放时不打扰） */
+    private fun startIdleRotation() {
+        scope.launch {
+            while (isActive) {
+                delay(if (isSitting) 60_000L else 120_000L)
+                if (isGhost) continue
+                isSitting = !isSitting
+                idleGif = if (isSitting) R.drawable.pet_sit else R.drawable.pet_sleep
+                if (!animating) switchGif(idleGif)
+            }
         }
     }
 
@@ -188,6 +227,12 @@ class PetFloatService : Service() {
             val pet = db.petDao().get()
             val updated = pet?.let { PetManager.play(it) } ?: PetEntity()
             db.petDao().upsert(updated)
+            // 悬浮窗切换到陪伴动画，3 秒后恢复（饥饿为 0 时回到幽灵）
+            animating = true
+            switchGif(R.drawable.pet_play)
+            delay(3000)
+            animating = false
+            if (isGhost) switchGif(R.drawable.pet_ghost) else switchGif(idleGif)
             showToast("最喜欢你了！")
         }
     }

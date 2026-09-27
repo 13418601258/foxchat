@@ -32,7 +32,10 @@ class ChatClient(
         .build()
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun generateWeeklyReport(messages: List<MessageEntity>): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun generateWeeklyReport(
+        messages: List<MessageEntity>,
+        stats: String
+    ): Result<String> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext Result.failure(IllegalStateException("尚未配置周报 AI Key"))
         }
@@ -40,7 +43,7 @@ class ChatClient(
             .filter { it.type == "TEXT" && it.text?.isNotBlank() == true }
             .joinToString("\n") { "${it.senderRole}: ${it.text}" }
         if (transcript.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("本周没有可分析的文本消息"))
+            return@withContext Result.failure(IllegalArgumentException("没有可分析的文本消息"))
         }
 
         val requestMessages = JSONArray().apply {
@@ -49,16 +52,30 @@ class ChatClient(
                 put(
                     "content",
                     """
-                    你负责整理一份双方共同可见的聊天周报。
-                    只根据聊天内容总结本周聊天摘要、高频话题、情绪变化、互动频率、
-                    重要事件和共同计划。不得进行心理诊断，不给任何一方贴人格标签，
-                    不猜测未明确表达的私人事实。使用简洁中文分段输出。
+                    你是一位趣味聊天数据分析师。下面是【本地统计】的准确数据和【本周聊天记录】。
+                    请基于真实聊天内容做轻松有趣的数据盘点，语言轻松接地气，多用数据说话，
+                    挖掘有意思的细节，不做严肃的心理评判，不给任何一方贴标签。
+
+                    请严格按以下结构输出：
+                    一、基础数据大盘
+                    二、语言指纹大揭秘
+                    三、互动行为画像
+                    四、话题内容地图
+                    五、趣味冷知识盘点（至少 3 个细节）
+                    六、一句话总结
+
+                    重要：数据类指标（消息数、占比、高频字词、回复速度等）请直接采用【本地统计】
+                    中的准确数字，不要自己重新数；趣味类分析（口头禅、话题、吐槽、默契时刻、冷知识）
+                    基于聊天记录发挥。
                     """.trimIndent()
                 )
             })
             put(JSONObject().apply {
                 put("role", "user")
-                put("content", transcript)
+                put(
+                    "content",
+                    "【本地统计（准确数据，请直接采用）】\n$stats\n\n【本周聊天记录】\n$transcript"
+                )
             })
         }
         requestChatCompletion(requestMessages)
@@ -69,8 +86,8 @@ class ChatClient(
             val body = JSONObject().apply {
                 put("model", "deepseek-chat")
                 put("messages", messages)
-                put("temperature", 0.2)
-                put("max_tokens", 1200)
+                put("temperature", 0.6)
+                put("max_tokens", 1800)
             }
             val request = Request.Builder()
                 .url("${baseUrl.trimEnd('/')}/v1/chat/completions")

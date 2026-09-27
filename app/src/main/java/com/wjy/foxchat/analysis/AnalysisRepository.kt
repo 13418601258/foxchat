@@ -17,7 +17,9 @@ class AnalysisRepository(context: Context) {
         conversationId: String,
         messages: List<MessageEntity>
     ): Result<WeeklyReportEntity> {
-        return client.generateWeeklyReport(messages).map { content ->
+        // B 方案：先本地算准统计，再交给 AI 做趣味盘点
+        val stats = WeeklyStatsCalculator.compute(messages)
+        return client.generateWeeklyReport(messages, stats).map { content ->
             val week = currentWeekKey()
             WeeklyReportEntity(
                 id = "$conversationId:$week",

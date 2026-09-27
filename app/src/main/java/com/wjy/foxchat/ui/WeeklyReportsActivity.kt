@@ -4,9 +4,11 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.wjy.foxchat.R
+import com.wjy.foxchat.analysis.AnalysisRepository
 import com.wjy.foxchat.data.repository.ChatRepository
 import com.wjy.foxchat.databinding.ActivityWeeklyReportsBinding
 import com.wjy.foxchat.model.ChatStats
@@ -22,6 +24,11 @@ class WeeklyReportsActivity : AppCompatActivity() {
         setContentView(binding.root)
         findViewById<android.widget.TextView>(com.wjy.foxchat.R.id.tvTitle).text = "每周分析"
         findViewById<android.widget.ImageButton>(com.wjy.foxchat.R.id.btnBack).setOnClickListener { finish() }
+        binding.btnAnalyze.setOnClickListener { analyzeNow() }
+        refresh()
+    }
+
+    private fun refresh() {
         lifecycleScope.launch {
             val repo = ChatRepository.get(this@WeeklyReportsActivity)
             val stats = repo.computeStats(7)
@@ -31,11 +38,42 @@ class WeeklyReportsActivity : AppCompatActivity() {
             addText(buildStatsText(stats), true)
             addText("每周 AI 分析", false)
             if (reports.isEmpty()) {
-                addText("暂时还没有周报。双方都同意并产生新的聊天记录后会自动生成。", false)
+                addText("点击下方「生成趣味周报」开始分析最近 200 条聊天。", false)
             } else {
                 reports.forEach { report ->
                     addText("${report.weekKey}\n\n${report.summary}", true)
                 }
+            }
+        }
+    }
+
+    private var isAnalyzing = false
+    private fun analyzeNow() {
+        if (isAnalyzing) return
+        isAnalyzing = true
+        binding.btnAnalyze.isEnabled = false
+        binding.btnAnalyze.text = "分析中..."
+        lifecycleScope.launch {
+            val repo = ChatRepository.get(this@WeeklyReportsActivity)
+            try {
+                val messages = repo.messagesForAnalysisRecent(200)
+                if (messages.isEmpty()) {
+                    addText("还没有可分析的聊天记录", true)
+                } else {
+                    val result = AnalysisRepository(this@WeeklyReportsActivity)
+                        .generateWeeklyReport(repo.currentConversationId, messages)
+                    result.onSuccess { report ->
+                        repo.saveReport(report)
+                        Toast.makeText(this@WeeklyReportsActivity, "分析完成", Toast.LENGTH_SHORT).show()
+                        refresh()
+                    }.onFailure { e ->
+                        addText("分析失败：${e.message}", true)
+                    }
+                }
+            } finally {
+                isAnalyzing = false
+                binding.btnAnalyze.isEnabled = true
+                binding.btnAnalyze.text = "生成趣味周报"
             }
         }
     }

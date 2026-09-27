@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -52,11 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import android.graphics.BitmapFactory
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -69,7 +67,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import com.wjy.foxchat.R
+import coil.compose.AsyncImage
 import com.wjy.foxchat.model.Message
+import java.io.File
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -127,6 +127,14 @@ fun ChatScreen(
         }
     }
 
+    // 预计算消息索引，避免每条消息在列表项内做 O(n) 线性查找
+    val messageById = remember(messages) { messages.associateBy { it.id } }
+    val checkinRepliesByMessageId = remember(messages) {
+        messages
+            .filter { it.type == Message.TYPE_CHECKIN_REPLY }
+            .groupBy { it.replyToMessageId.orEmpty() }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -141,17 +149,10 @@ fun ChatScreen(
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            // 自定义聊天背景（若有）
-        val bgBitmap = remember(backgroundPath) {
-            backgroundPath?.let {
-                runCatching {
-                    BitmapFactory.decodeFile(it)?.asImageBitmap()
-                }.getOrNull()
-            }
-        }
-        if (bgBitmap != null) {
-            Image(
-                painter = BitmapPainter(bgBitmap),
+            // 自定义聊天背景（若有）：用 Coil 异步加载并下采样，避免大图直接解码卡顿
+        if (backgroundPath != null && File(backgroundPath).exists()) {
+            AsyncImage(
+                model = File(backgroundPath),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 alpha = 0.25f,
@@ -184,17 +185,10 @@ fun ChatScreen(
                     bottom = 18.dp
                 )
             ) {
-                items(messages.size) { index ->
-                    val message = messages[index]
+                items(messages, key = { it.id }) { message ->
                     val quoted = message.replyToMessageId
-                        ?.let { replyId -> messages.firstOrNull { it.id == replyId } }
-                    val checkinReplies = if (message.isCheckin) {
-                        messages.filter {
-                            it.replyToMessageId == message.id && it.type == Message.TYPE_CHECKIN_REPLY
-                        }
-                    } else {
-                        emptyList()
-                    }
+                        ?.let { replyId -> messageById[replyId] }
+                    val checkinReplies = checkinRepliesByMessageId[message.id].orEmpty()
                     MessageBubble(
                         message = message,
                         quoted = quoted,

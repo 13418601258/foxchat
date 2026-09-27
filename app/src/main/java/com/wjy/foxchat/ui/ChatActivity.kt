@@ -16,38 +16,29 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import com.wjy.foxchat.data.repository.ChatRepository
 import com.wjy.foxchat.model.Message
 import com.wjy.foxchat.notification.ChatNotificationManager
 import com.wjy.foxchat.ui.compose.ChatScreen
 import com.wjy.foxchat.ui.compose.ChatTheme
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
+/**
+ * 聊天页 Activity：仅负责设备交互（录音、播放、相册、相机、剪贴板、权限）与页面导航。
+ * 全部业务状态由 [ChatViewModel] 持有，旋转屏幕状态不丢失。
+ */
 class ChatActivity : ComponentActivity() {
-    private lateinit var repository: ChatRepository
 
-    // Compose UI 状态
-    private var messages by mutableStateOf<List<Message>>(emptyList())
-    private var replyToMessageId by mutableStateOf<String?>(null)
-    private var syncStatus by mutableStateOf("仅本地")
-    private var inlineStatus by mutableStateOf<String?>(null)
+    private val viewModel: ChatViewModel by viewModels()
+
+    // 录音相关瞬时状态（设备资源绑定 Activity 生命周期，旋转即中断，符合预期）
     private var isRecording by mutableStateOf(false)
-    private var backgroundPath by mutableStateOf<String?>(null)
-    private var myAvatar by mutableStateOf<String?>(null)
-    private var partnerAvatar by mutableStateOf<String?>(null)
-
     private var pendingGalleryPurpose = GalleryPurpose.IMAGE
     private var pendingCameraFile: File? = null
     private var recorder: MediaRecorder? = null
@@ -65,7 +56,7 @@ class ChatActivity : ComponentActivity() {
         val file = pendingCameraFile
         pendingCameraFile = null
         if (saved && file != null) {
-            sendMedia(Message.TYPE_IMAGE, file.absolutePath, "image/jpeg")
+            viewModel.sendMedia(Message.TYPE_IMAGE, file.absolutePath, "image/jpeg")
         } else {
             file?.delete()
         }
@@ -74,7 +65,7 @@ class ChatActivity : ComponentActivity() {
     private val requestAudioPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) showInlineStatus("未授予麦克风权限，无法录音")
+        if (!granted) viewModel.showInlineStatus("未授予麦克风权限，无法录音")
     }
 
     private val requestNotificationPermission = registerForActivityResult(
@@ -93,8 +84,7 @@ class ChatActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        repository = ChatRepository.get(this)
-        if (!repository.isPaired) {
+        if (!viewModel.isPaired) {
             startActivity(Intent(this, ApiKeyActivity::class.java))
             finish()
             return
@@ -112,27 +102,25 @@ class ChatActivity : ComponentActivity() {
         setContent {
             ChatTheme {
                 ChatScreen(
-                    messages = messages,
-                    backgroundPath = backgroundPath,
-                    replyToMessage = replyToMessageId?.let { id ->
-                        messages.firstOrNull { it.id == id }
-                    },
-                    myAvatarPath = myAvatar,
-                    partnerAvatarPath = partnerAvatar,
-                    syncStatus = syncStatus,
-                    currentRole = repository.currentRole,
+                    messages = viewModel.messages,
+                    backgroundPath = viewModel.backgroundPath,
+                    replyToMessage = viewModel.replyToMessage,
+                    myAvatarPath = viewModel.myAvatar,
+                    partnerAvatarPath = viewModel.partnerAvatar,
+                    syncStatus = viewModel.syncStatus,
+                    currentRole = viewModel.currentRole,
                     isRecording = isRecording,
-                    inlineStatus = inlineStatus,
-                    onSendText = ::sendText,
+                    inlineStatus = viewModel.inlineStatus,
+                    onSendText = viewModel::sendText,
                     onMoreClick = { openChatSettings.launch(ChatSettingsActivity.newIntent(this)) },
                     onSidebarAction = ::handleSidebarAction,
-                    onReply = ::handleReply,
+                    onReply = viewModel::setReplyTo,
                     onCopy = ::handleCopy,
-                    onRecall = { message -> lifecycleScope.launch { repository.recallMessage(message.id) } },
-                    onDelete = { message -> lifecycleScope.launch { repository.deleteMessage(message.id) } },
+                    onRecall = viewModel::recall,
+                    onDelete = viewModel::delete,
                     onImageClick = ::showImagePreview,
                     onAudioClick = ::playAudio,
-                    onClearReply = ::clearReply,
+                    onClearReply = viewModel::clearReply,
                     onStartRecording = ::startRecording,
                     onStopRecording = { send -> stopRecording(send) },
                     onCamera = ::openCamera,
@@ -141,63 +129,22 @@ class ChatActivity : ComponentActivity() {
                 )
             }
         }
+    }
 
-        lifecycleScope.launch {
-            repository.ensureInitialized()
-            updateSyncStatus()
-            myAvatar = repository.myAvatar
-            repository.syncNow()
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                repository.observeMessages().collect { collected ->
-                    messages = collected
-                    collected
-                        .filter { !it.isMine && it.deliveryStatus != "READ" }
-                        .forEach { message ->
-                            lifecycleScope.launch { repository.markAsRead(message.id) }
-                        }
-                }
-            }
-        }
+    override fun onStart() {
+        super.onStart()
+        viewModel.onUiStarted()
+    }
 
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                repository.observeParticipants().collect { participants ->
-                    val myRole = repository.currentRole
-                    val mine = participants.firstOrNull { it.role == myRole }
-                    val partner = participants.firstOrNull { it.role != myRole }
-                    myAvatar = repository.myAvatar
-                        ?: mine?.avatar?.let { repository.resolveAvatarLocalPath(it) }
-                    partnerAvatar = partner?.avatar
-                        ?.let { repository.resolveAvatarLocalPath(it) }
-                }
-            }
-        }
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                repository.observeBackground().collect { remotePath ->
-                    applyBackground(repository.resolveBackgroundLocalPath(remotePath))
-                }
-            }
-        }
-
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (isActive) {
-                    repository.syncNow()
-                    delay(SYNC_INTERVAL_MS)
-                }
-            }
-        }
+    override fun onStop() {
+        viewModel.onUiStopped()
+        super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
         ChatNotificationManager.cancel(this)
-        lifecycleScope.launch {
-            repository.syncNow()
-            updateSyncStatus()
-        }
+        viewModel.syncOnce()
     }
 
     override fun onPause() {
@@ -212,36 +159,18 @@ class ChatActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun sendText(text: String) {
-        if (text.isBlank()) return
-        lifecycleScope.launch {
-            repository.sendText(text, replyToMessageId)
-            clearReply()
-            repository.syncNow()
-            updateSyncStatus()
-        }
-    }
-
     private fun handleSettingsAction(action: String) {
         when (action) {
             ChatSettingsActivity.ACTION_SET_BACKGROUND -> openGallery(GalleryPurpose.BACKGROUND)
-            ChatSettingsActivity.ACTION_RESET_BACKGROUND -> lifecycleScope.launch {
-                repository.setBackground(null)
-                applyBackground(null)
-            }
-            ChatSettingsActivity.ACTION_SYNC -> lifecycleScope.launch {
-                repository.syncNow()
-                updateSyncStatus()
-            }
+            ChatSettingsActivity.ACTION_RESET_BACKGROUND -> viewModel.resetBackground()
+            ChatSettingsActivity.ACTION_SYNC -> viewModel.syncOnce()
         }
     }
 
     private fun handleSidebarAction(action: String) {
         when (action) {
-            "pet" ->
-                startActivity(PetActivity.newIntent(this))
-            "checkin" ->
-                startActivity(CheckinCreateActivity.newIntent(this))
+            "pet" -> startActivity(PetActivity.newIntent(this))
+            "checkin" -> startActivity(CheckinCreateActivity.newIntent(this))
             "scheduled_notification" ->
                 startActivity(ScheduledNotificationActivity.newIntent(this))
         }
@@ -279,30 +208,18 @@ class ChatActivity : ComponentActivity() {
             }
             target
         }.getOrElse {
-            showInlineStatus("图片读取失败")
+            viewModel.showInlineStatus("图片读取失败")
             return
         }
 
         if (pendingGalleryPurpose == GalleryPurpose.BACKGROUND) {
-            lifecycleScope.launch {
-                repository.setBackground(copied.absolutePath)
-                applyBackground(copied.absolutePath)
-            }
+            viewModel.setBackground(copied.absolutePath)
         } else {
-            sendMedia(
+            viewModel.sendMedia(
                 Message.TYPE_IMAGE,
                 copied.absolutePath,
                 contentResolver.getType(uri) ?: "image/*"
             )
-        }
-    }
-
-    private fun sendMedia(type: String, path: String, mimeType: String, durationMs: Long = 0L) {
-        lifecycleScope.launch {
-            repository.sendMedia(type, path, mimeType, durationMs, replyToMessageId)
-            clearReply()
-            repository.syncNow()
-            updateSyncStatus()
         }
     }
 
@@ -333,12 +250,12 @@ class ChatActivity : ComponentActivity() {
             recordingFile = file
             recordingStartedAt = System.currentTimeMillis()
             isRecording = true
-            inlineStatus = "正在录音，松开发送，最长 60 秒"
+            viewModel.showInlineStatus("正在录音，松开发送，最长 60 秒")
             mainHandler.postDelayed(maxRecordingRunnable, MAX_RECORDING_MS)
         } catch (_: Exception) {
             newRecorder.release()
             file.delete()
-            showInlineStatus("录音启动失败")
+            viewModel.showInlineStatus("录音启动失败")
         }
     }
 
@@ -354,17 +271,13 @@ class ChatActivity : ComponentActivity() {
             activeRecorder.stop()
             activeRecorder.release()
         }
-        clearReply()
+        viewModel.clearReply()
         if (send && file != null && file.exists() && duration >= 500L) {
-            sendMedia(Message.TYPE_AUDIO, file.absolutePath, "audio/mp4", duration)
+            viewModel.sendMedia(Message.TYPE_AUDIO, file.absolutePath, "audio/mp4", duration)
         } else {
             file?.delete()
         }
-        inlineStatus = null
-    }
-
-    private fun handleReply(message: Message) {
-        replyToMessageId = message.id
+        viewModel.clearInlineStatus()
     }
 
     private fun handleCopy(message: Message) {
@@ -385,7 +298,7 @@ class ChatActivity : ComponentActivity() {
         val file = File(raw)
         if (!file.exists()) {
             // 语音文件尚未下载到本地（远程路径未同步完）
-            showInlineStatus("语音文件未就绪，请稍后重试")
+            viewModel.showInlineStatus("语音文件未就绪，请稍后重试")
             return
         }
         mediaPlayer?.release()
@@ -398,34 +311,15 @@ class ChatActivity : ComponentActivity() {
                     if (mediaPlayer === player) mediaPlayer = null
                 }
                 setOnErrorListener { _, _, _ ->
-                    showInlineStatus("语音播放失败")
+                    viewModel.showInlineStatus("语音播放失败")
                     true
                 }
                 prepareAsync()
             }
         } catch (_: Exception) {
-            showInlineStatus("语音播放失败")
+            viewModel.showInlineStatus("语音播放失败")
             null
         }
-    }
-
-    private fun applyBackground(path: String?) {
-        backgroundPath = path
-    }
-
-    private fun updateSyncStatus() {
-        syncStatus = if (repository.isRemoteConfigured) "已同步" else "仅本地"
-    }
-
-    private fun showInlineStatus(message: String) {
-        inlineStatus = message
-        mainHandler.postDelayed({
-            if (!isFinishing) inlineStatus = null
-        }, 2600L)
-    }
-
-    private fun clearReply() {
-        replyToMessageId = null
     }
 
     private fun createMediaDirectory(name: String): File {
@@ -434,7 +328,6 @@ class ChatActivity : ComponentActivity() {
 
     companion object {
         private const val MAX_RECORDING_MS = 60_000L
-        private const val SYNC_INTERVAL_MS = 1_000L
         fun newIntent(context: Context): Intent = Intent(context, ChatActivity::class.java)
     }
 

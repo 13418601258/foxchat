@@ -1,20 +1,17 @@
 package com.wjy.foxchat.ui.compose
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
+import coil.compose.AsyncImage
 import com.wjy.foxchat.R
 import java.io.File
 
@@ -29,16 +26,15 @@ fun AvatarBadge(
     size: Dp,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(path) {
-        path?.let { p ->
-            runCatching { BitmapFactory.decodeFile(pathToFile(p).absolutePath) }.getOrNull()
-        }
-    }
+    val file = path?.let { pathToFile(it) }?.takeIf { it.exists() }
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
-        if (bitmap != null) {
-            Image(
-                painter = BitmapPainter(bitmap.asImageBitmap()),
+        if (file != null) {
+            // 用 Coil 异步加载并自动下采样，避免直接解码大图卡顿/占用内存
+            AsyncImage(
+                model = file,
                 contentDescription = null,
+                placeholder = painterResource(R.mipmap.ic_launcher),
+                error = painterResource(R.mipmap.ic_launcher),
                 modifier = Modifier
                     .size(size)
                     .clip(CircleShape),

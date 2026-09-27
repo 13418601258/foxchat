@@ -22,6 +22,7 @@
     <string name="sync_now">立即同步</string>
     <string name="clear_chat">清空当前聊天</string>
     <string name="check_update">检查更新</string>
+    <string name="change_avatar">换头像</string>
     <string name="enabled">已开启</string>
     <string name="disabled">未开启</string>
 </resources>
