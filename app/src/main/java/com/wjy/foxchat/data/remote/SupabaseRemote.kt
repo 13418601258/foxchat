@@ -4,6 +4,7 @@ import com.wjy.foxchat.BuildConfig
 import com.wjy.foxchat.data.local.MessageEntity
 import com.wjy.foxchat.data.local.ParticipantEntity
 import com.wjy.foxchat.data.local.WeeklyReportEntity
+import com.wjy.foxchat.data.local.TimeBlockEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -285,6 +286,57 @@ class SupabaseRemote {
                 )
             }
         }
+    }
+
+    suspend fun upsertTimeBlock(timeBlock: TimeBlockEntity): Result<Unit> = runCatching {
+        require(isConfigured) { "Supabase 未配置" }
+        val payload = JSONArray().put(JSONObject().apply {
+            put("id", timeBlock.id)
+            put("conversation_id", timeBlock.conversationId)
+            put("creator_role", timeBlock.creatorRole)
+            put("started_at_ms", timeBlock.startedAt)
+            put("ended_at_ms", requireNotNull(timeBlock.endedAt))
+            put("description", requireNotNull(timeBlock.description))
+        })
+        execute(
+            Request.Builder()
+                .url("${baseUrl()}/rest/v1/time_blocks?on_conflict=id")
+                .headers(defaultHeaders("resolution=ignore-duplicates,return=minimal"))
+                .post(payload.toString().toRequestBody(jsonType))
+                .build()
+        )
+    }
+
+    suspend fun fetchTimeBlocks(conversationId: String): Result<List<TimeBlockEntity>> = runCatching {
+        require(isConfigured) { "Supabase 未配置" }
+        val pageSize = 500
+        var offset = 0
+        val records = mutableListOf<TimeBlockEntity>()
+        while (true) {
+            val raw = execute(
+                Request.Builder()
+                    .url("${baseUrl()}/rest/v1/time_blocks?conversation_id=eq.$conversationId&order=started_at_ms.asc&limit=$pageSize&offset=$offset")
+                    .headers(defaultHeaders())
+                    .get()
+                    .build()
+            )
+            val array = JSONArray(raw)
+            for (index in 0 until array.length()) {
+                val item = array.getJSONObject(index)
+                records += TimeBlockEntity(
+                    id = item.getString("id"),
+                    conversationId = item.getString("conversation_id"),
+                    creatorRole = item.getString("creator_role"),
+                    startedAt = item.getLong("started_at_ms"),
+                    endedAt = item.getLong("ended_at_ms"),
+                    description = item.getString("description"),
+                    syncStatus = "SYNCED"
+                )
+            }
+            if (array.length() < pageSize) break
+            offset += pageSize
+        }
+        records
     }
 
     suspend fun fetchMessages(conversationId: String, after: Long): Result<List<MessageEntity>> = runCatching {

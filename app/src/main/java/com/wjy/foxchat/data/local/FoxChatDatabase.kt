@@ -15,9 +15,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WeeklyReportEntity::class,
         ParticipantEntity::class,
         OutboxEntity::class,
-        PetEntity::class
+        PetEntity::class,
+        TimeBlockEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class FoxChatDatabase : RoomDatabase() {
@@ -28,6 +29,7 @@ abstract class FoxChatDatabase : RoomDatabase() {
     abstract fun participantDao(): ParticipantDao
     abstract fun outboxDao(): OutboxDao
     abstract fun petDao(): PetDao
+    abstract fun timeBlockDao(): TimeBlockDao
 
     companion object {
         @Volatile private var instance: FoxChatDatabase? = null
@@ -38,7 +40,7 @@ abstract class FoxChatDatabase : RoomDatabase() {
                     context.applicationContext,
                     FoxChatDatabase::class.java,
                     "foxchat.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { instance = it }
             }
 
@@ -58,6 +60,20 @@ abstract class FoxChatDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `pet` (`id` INTEGER NOT NULL, `food` INTEGER NOT NULL, `drink` INTEGER NOT NULL, `condition` REAL NOT NULL, `love` INTEGER NOT NULL, `days` INTEGER NOT NULL, `lastUpdatedAt` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `time_blocks` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `creatorRole` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER, `description` TEXT, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_time_blocks_conversationId_startedAt` ON `time_blocks` (`conversationId`, `startedAt`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_time_blocks_syncStatus` ON `time_blocks` (`syncStatus`)"
                 )
             }
         }

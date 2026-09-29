@@ -8,6 +8,7 @@ import com.wjy.foxchat.data.local.FoxChatDatabase
 import com.wjy.foxchat.data.local.MessageEntity
 import com.wjy.foxchat.data.local.OutboxEntity
 import com.wjy.foxchat.data.local.ParticipantEntity
+import com.wjy.foxchat.data.local.TimeBlockEntity
 import com.wjy.foxchat.analysis.StatisticsCalculator
 import com.wjy.foxchat.data.remote.SupabaseRemote
 import com.wjy.foxchat.model.ChatStats
@@ -385,6 +386,47 @@ class ChatRepository private constructor(context: Context) {
     fun observeReports() =
         database.weeklyReportDao().observeForConversation(currentConversationId)
 
+    fun observeTimeBlocks(): Flow<List<TimeBlockEntity>> =
+        database.timeBlockDao().observeForConversation(currentConversationId)
+
+    suspend fun hasPendingTimeBlocks(): Boolean =
+        database.timeBlockDao().pendingCount(currentConversationId) > 0
+
+    suspend fun currentTimeBlock(): TimeBlockEntity? {
+        ensureInitialized()
+        return database.timeBlockDao().activeForConversation(currentConversationId)
+            ?: database.timeBlockDao().unfinishedForConversation(currentConversationId)
+    }
+
+    suspend fun startTimeBlock(): TimeBlockEntity {
+        ensureInitialized()
+        check(currentTimeBlock() == null) { "请先完成当前时间块" }
+        return TimeBlockEntity(
+            id = UUID.randomUUID().toString(),
+            conversationId = currentConversationId,
+            creatorRole = currentRole,
+            startedAt = System.currentTimeMillis()
+        ).also { database.timeBlockDao().upsert(it) }
+    }
+
+    suspend fun stopTimeBlock(): TimeBlockEntity {
+        ensureInitialized()
+        val active = database.timeBlockDao().activeForConversation(currentConversationId)
+            ?: error("当前没有正在计时的时间块")
+        return active.copy(endedAt = System.currentTimeMillis())
+            .also { database.timeBlockDao().upsert(it) }
+    }
+
+    suspend fun completeTimeBlock(id: String, description: String) {
+        ensureInitialized()
+        require(description.isNotBlank()) { "请填写学习内容" }
+        val draft = database.timeBlockDao().unfinishedForConversation(currentConversationId)
+            ?.takeIf { it.id == id }
+            ?: error("找不到待填写的时间块")
+        database.timeBlockDao().upsert(draft.copy(description = description.trim()))
+        scope.launch { syncNow() }
+    }
+
     /** 本地统计最近 N 天聊天数据（不依赖 AI）。 */
     suspend fun computeStats(days: Int = 7): ChatStats {
         ensureInitialized()
@@ -456,6 +498,11 @@ class ChatRepository private constructor(context: Context) {
                 }
             }
 
+            database.timeBlockDao().pendingForConversation(currentConversationId).forEach { block ->
+                remote.upsertTimeBlock(block)
+                    .onSuccess { database.timeBlockDao().markSynced(block.id) }
+            }
+
             val remoteMessages = remote.fetchMessages(currentConversationId, previousSyncTime).getOrThrow()
             val incomingMessages = if (initialSync) {
                 emptyList()
@@ -475,6 +522,9 @@ class ChatRepository private constructor(context: Context) {
             remote.fetchWeeklyReports(currentConversationId)
                 .getOrNull()
                 ?.forEach { database.weeklyReportDao().upsert(it) }
+            remote.fetchTimeBlocks(currentConversationId)
+                .getOrNull()
+                ?.forEach { database.timeBlockDao().upsert(it) }
             remote.fetchRoomBackground(currentConversationId)
                 .getOrNull()
                 ?.let { remoteUri ->

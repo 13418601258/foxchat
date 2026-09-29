@@ -125,3 +125,30 @@ interface PetDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(pet: PetEntity)
 }
+
+@Dao
+interface TimeBlockDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(timeBlock: TimeBlockEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(timeBlocks: List<TimeBlockEntity>)
+
+    @Query("SELECT * FROM time_blocks WHERE conversationId = :conversationId ORDER BY startedAt DESC")
+    fun observeForConversation(conversationId: String): Flow<List<TimeBlockEntity>>
+
+    @Query("SELECT * FROM time_blocks WHERE conversationId = :conversationId AND endedAt IS NULL LIMIT 1")
+    suspend fun activeForConversation(conversationId: String): TimeBlockEntity?
+
+    @Query("SELECT * FROM time_blocks WHERE conversationId = :conversationId AND endedAt IS NOT NULL AND (description IS NULL OR trim(description) = '') LIMIT 1")
+    suspend fun unfinishedForConversation(conversationId: String): TimeBlockEntity?
+
+    @Query("SELECT * FROM time_blocks WHERE conversationId = :conversationId AND syncStatus = 'PENDING' AND endedAt IS NOT NULL AND description IS NOT NULL AND trim(description) != '' ORDER BY startedAt ASC")
+    suspend fun pendingForConversation(conversationId: String): List<TimeBlockEntity>
+
+    @Query("SELECT COUNT(*) FROM time_blocks WHERE conversationId = :conversationId AND syncStatus = 'PENDING' AND endedAt IS NOT NULL AND description IS NOT NULL AND trim(description) != ''")
+    suspend fun pendingCount(conversationId: String): Int
+
+    @Query("UPDATE time_blocks SET syncStatus = 'SYNCED' WHERE id = :id")
+    suspend fun markSynced(id: String)
+}

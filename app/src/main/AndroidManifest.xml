@@ -55,6 +55,9 @@
             android:name=".ui.CheckinCreateActivity"
             android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.PetActivity" />
+        <activity
+            android:name=".ui.TimeBlocksActivity"
+            android:windowSoftInputMode="adjustResize" />
         <service
             android:name=".pet.PetFloatService"
             android:exported="false"

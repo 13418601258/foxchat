@@ -57,6 +57,21 @@ create table if not exists public.weekly_reports (
     unique(conversation_id, week_key)
 );
 
+create table if not exists public.time_blocks (
+    id text primary key,
+    conversation_id text not null references public.rooms(id) on delete cascade,
+    creator_role text not null check (creator_role in ('A', 'B')),
+    started_at_ms bigint not null,
+    ended_at_ms bigint not null,
+    description text not null,
+    created_at timestamptz not null default now(),
+    check (ended_at_ms > started_at_ms),
+    check (length(trim(description)) > 0)
+);
+
+create index if not exists time_blocks_conversation_started_idx
+    on public.time_blocks(conversation_id, started_at_ms);
+
 create or replace function public.pair_device(
     room_key text,
     participant_role text,
@@ -188,6 +203,7 @@ alter table public.rooms enable row level security;
 alter table public.room_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.weekly_reports enable row level security;
+alter table public.time_blocks enable row level security;
 
 create policy "room members can view their room"
 on public.rooms for select to authenticated
@@ -247,6 +263,25 @@ with check (exists (
     select 1 from public.room_members
     where room_members.room_id = weekly_reports.conversation_id
       and room_members.user_id = auth.uid()
+));
+
+drop policy if exists "members can read time blocks" on public.time_blocks;
+create policy "members can read time blocks"
+on public.time_blocks for select to authenticated
+using (exists (
+    select 1 from public.room_members
+    where room_members.room_id = time_blocks.conversation_id
+      and room_members.user_id = auth.uid()
+));
+
+drop policy if exists "members can insert own time blocks" on public.time_blocks;
+create policy "members can insert own time blocks"
+on public.time_blocks for insert to authenticated
+with check (exists (
+    select 1 from public.room_members
+    where room_members.room_id = time_blocks.conversation_id
+      and room_members.user_id = auth.uid()
+      and room_members.participant_role = time_blocks.creator_role
 ));
 
 insert into storage.buckets(id, name, public)

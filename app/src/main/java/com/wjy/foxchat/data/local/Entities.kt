@@ -98,3 +98,17 @@ data class PetEntity(
     val lastUpdatedAt: Long = System.currentTimeMillis(),
     val startedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(
+    tableName = "time_blocks",
+    indices = [Index(value = ["conversationId", "startedAt"]), Index("syncStatus")]
+)
+data class TimeBlockEntity(
+    @PrimaryKey val id: String,
+    val conversationId: String,
+    val creatorRole: String,
+    val startedAt: Long,
+    val endedAt: Long? = null,
+    val description: String? = null,
+    val syncStatus: String = "PENDING"
+)

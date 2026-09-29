@@ -171,6 +171,7 @@ class ChatActivity : ComponentActivity() {
         when (action) {
             "pet" -> startActivity(PetActivity.newIntent(this))
             "checkin" -> startActivity(CheckinCreateActivity.newIntent(this))
+            "time_blocks" -> startActivity(TimeBlocksActivity.newIntent(this))
             "scheduled_notification" ->
                 startActivity(ScheduledNotificationActivity.newIntent(this))
         }
